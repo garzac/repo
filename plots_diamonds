@@ -1,0 +1,30 @@
+# In the next code, I'll analyse the diamonds dataset.  
+# I will plot  the metrics by each cut in two plots.
+# The first plot will show the total sales by each cut.
+# The second plot will show the percentage of the sales by each cut.
+# And finally I will join the two plots into just one plot.
+library(tidyverse)
+library(scales)
+library(gridExtra)
+plot_1 <- diamonds |> group_by(cut) |> summarise(total = sum(price)) |> 
+    ggplot(aes(x = cut, y = total, fill = cut)) +
+    geom_col(show.legend = FALSE) +
+    geom_label(aes(label = comma(total, prefix = '$')), fill = 'white') +
+    scale_y_continuous(labels = label_dollar()) +
+    theme_minimal() +
+    ggtitle('Total sales of Diamonds by each Cut') +
+    xlab("Diamond's Cut") +
+    ylab('Total Sales')
+
+plot_2 <- diamonds |> group_by(cut) |> summarise(total = sum(price)) |> 
+    mutate(percent = (total / sum(total) * 100)) |> 
+    ggplot(aes(cut, percent, fill = cut)) +
+    geom_col(show.legend = FALSE) +
+    geom_label(aes(label = percent(percent, scale = 1)), fill = 'white') +
+    scale_y_continuous(labels = label_percent(scale = 1)) +
+    theme_minimal() +
+    ggtitle('Percentage of Total sales by each Cut') +
+    xlab("Diamond's Cut") +
+    ylab('Percentage of the Sales')
+
+grid.arrange(plot_1, plot_2, ncol = 2)    
