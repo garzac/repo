@@ -1,0 +1,27 @@
+# The following code is about data-wrangling. I use the dataset of 
+# world_bank_pop. Apply some transformations in the dataset in a way that when 
+# the process is done, the data transformed can be easier to read and understand
+# Every column is a variable. And every observation is a row.
+library(tidyverse)
+head(world_bank_pop)
+
+# First, I apply changes on the variable indicator. I replace all the values in 
+# indicator variable with the correct replacement. To do this use mutate() and 
+# within this use str_replace_all()
+distinct(world_bank_pop, indicator)
+
+world_bank_pop |> mutate(indicator = str_replace_all(indicator,
+    c('^SP.POP.GROW$' = 'population_growth', 
+      '^SP.POP.TOTL$' = 'total_population',
+      '^SP.URB.GROW$' = 'urban_population_growth',
+      '^SP.URB.TOTL$' = 'total_urban_population'))) |> 
+
+# Second, use pivot_longer()  to put all the variable years in one column and 
+# its values in other column
+    pivot_longer(cols = -c(country, indicator), names_to = 'year', values_to = 
+    'population') |> 
+
+# Third, use pivot_wider() to get a wide-format from the dataset. All this
+# process end up with a dataframe that is easier to read and understand. 
+# And now the dataset is ready for analysis.
+    pivot_wider(names_from = indicator, values_from = population)
