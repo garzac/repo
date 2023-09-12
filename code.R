@@ -2,7 +2,7 @@ library(tidyverse)
 library(gridExtra) 
 data("diamonds")
 diamonds$carat_range <- cut(diamonds$carat, 
-    breaks = quantile(diamonds$carat), labels = c("I", "II", "III", "IV"))
+    breaks = quantile(diamonds$carat), labels = c("I", "II", "III", "IV"), include.lowest = TRUE)
 
 I <- diamonds %>% filter(carat_range == "I") %>% group_by(cut) %>%
     mutate(mean_price = mean(price, na.rm = T), min_price = min(price), 
