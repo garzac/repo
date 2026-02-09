@@ -4,18 +4,13 @@
 # (one-hot-enconding, normalization, etc) is done with the library tfdataset 
 # that is based on Tensorflow-Dataset API. The model will learn about 15 classes  
 # that are based on the price and this time the classes are integers.
-
-# Load the libraries
-library(tensorflow)
 library(keras)
-library(tidyverse)
+library(tensorflow)
 library(tfdatasets)
-library(coro)
+library(tidyverse)
 
-# Reset the keras session
+# Now reset the  keras  session & set up the random numbers from tensorflow 
 tf$keras$backend$clear_session()
-
-# Now set up the random number from tensorflow
 tf$keras$utils$set_random_seed(51L)
 
 # Select the diamonds dataset and then remove the duplicates 
@@ -99,14 +94,26 @@ spec$fit()
 # To see the list of dense-features in the spec
 str(spec$dense_features())
 
+# Next, I'm going to build two distinct callbacks that it'll be used during the
+# training. The first callback will monitor the loss in validation-set and when the
+# loss stops decreasing, the callback it will change the learning rate. The other
+# callback also will monitor the accuracy in the validation-set and when the 
+# accuracy stops increasing the callback it will stop the training and also it'll 
+# RESTORE THE BEST WEIGHTS in the training
+lr <- callback_reduce_lr_on_plateau(monitor = 'val_loss',
+        patience = 15, verbose = 1, mode = 'min', min_lr = .0001)
+
+stoping <- callback_early_stopping(monitor = 'val_accuracy', patience = 35, 
+                verbose = 1, mode ='max', restore_best_weights = TRUE)
+
 # Now, its time to build the model. For this I'm going to use the Functional-API
 # Define the inputs of the model and store it in inputs
 inputs <- layer_input_from_dataset(train |>  select(-class))
 
 # Then define the rest of the model and store it in outputs
 outputs <- inputs %>% layer_dense_features(dense_features(spec)) |> 
-    layer_dense(units = 512, activation = 'relu') |> 
-    layer_dense(units = 256, activation = 'relu') |> 
+    layer_dense(units = 128, activation = 'relu') |> 
+    layer_dense(units = 64, activation = 'relu') |> 
     layer_dense(units = 16, activation = 'softmax')
 
 
@@ -124,19 +131,20 @@ model |> compile(optimizer = optimizer_adam(),
 # Then is time for training. For the X, I'll use the dataset and  eliminate the
 # variable-class. For the Y define the variable-class as a vector. It applies
 # the same approach with the parameter validation_data with their respective
-# validation dataset. Also I'm going to use callback_reduce_lr_on_plateau() in 
-# the callback parameter, this help to change the learning_rate when there is no
-# improvement in the network. When I run this command on my computer I get:
-# For train dataset: loss = .2834; accuracy = .8880
-# For validation dataset: loss = .5103; accuracy = .8158
-model |> fit(x = train |> select(-class), y = train$class, 
+# validation dataset. Also I'm going to use both callbacks in the callback 
+# parameter. The training stop in the epoch 96 and I get the following metrics:
+# For train dataset: loss = .3734; accuracy  = .8532
+# For validation dataset: loss = .4433; accuracy = .8226
+history <- model |> fit(x = train |> select(-class), y = train$class, 
     batch_size = 64, epochs = 100, verbose = 1, 
     validation_data = list(val |>  select(-class), val$class),
-    callbacks = callback_reduce_lr_on_plateau(monitor = 'val_loss', 
-    patience = 15, verbose = 1, min_lr = .0001))
+    callbacks = list(lr, stoping))
+
+# Inspect the metrics
+plot(history)
 
 # Now evaluate the model on test dataset. And applies the same approach as 
-# in training. I get: loss = .7334; accuracy = .8026
+# in training. I get: loss = .5635; accuracy = .8099
 model |> evaluate(test |>  select(-class), test$class)
 
 # Now is time to make the predictions with the new data to_predict. When I do
@@ -159,16 +167,19 @@ df <- matrix(prediction, ncol = 1, dimnames = list(NULL, 'class_predicted')) |>
 # how accurate were the predictions and for this I use filter() to compare the
 # values that are EQUAL in the variables CLASS and CLASS_PREDICTED. Then use
 # count() to count the number of observations. This code return 2451. So,
-# 2451 / 3000 = .817 This means that this model that will try to predict between
-# the 15 classes of the price of the diamonds, have an ACCURACY of 81.7%  
+# 2481 / 3000 = .827 This means that this model that will try to predict between
+# the 15 classes of the price of the diamonds, have an ACCURACY of 82.7%  
 df |> filter(class == class_predicted) |> count()
 
 # Now, I want to calculate the opposite, the procedure is very similar as the 
 # above, but this time I'm going to count all the number of observations that
 # are NOT EQUAL between CLASS and CLASS_PREDICTED. This code return 549. So,
-# 549 / 3000 = .183 This means that this model that will try to predict between
-# the 15 classes of the price of the diamonds, have an INACCURACY of 18.3%  
+# 519 / 3000 = .173 This means that this model that will try to predict between
+# the 15 classes of the price of the diamonds, have an INACCURACY of 17.3%  
 df |> filter(class != class_predicted) |> count()
+
+
+
 
 
 
