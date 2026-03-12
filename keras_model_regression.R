@@ -28,6 +28,15 @@ data <- data |> relocate(c(carat, price), .after = last_col()) |>
     mutate(cut = as.character(cut), color = as.character(color), 
         clarity = as.character(clarity), price = price / 1000)
 
+# Now, I'm going to inspect the correlation between the price variable and the 
+# others numeric variables. The variables depth & table have NULL correlation
+# with the variable price
+cor(data[, c(4:10)])
+
+# Now, I'm going to discard the variables depth & table, because of their NULL
+# correlation with the variable price
+data <- data |> select(-c(depth, table))
+
 # I'm going to use a subset of the data 
 set.seed(51)
 sample_data <- data |> sample_n(size = 48000)
@@ -50,9 +59,6 @@ to_predict <- sample_data[index_topredict, ]
 
 # Now, eliminate all the row-numbers in the indexes from the dataset data.
 sample_data <- sample_data[-index_topredict, ]
-
-# Verify that none row of the dataset-sample_data exists in the dataset-to_predict
-intersect(sample_data, to_predict)
 
 # Now I'm going to create another vector of indices that I'll use to split the 
 # dataset-sample_data into three subsets of data for train/validation/test
@@ -87,8 +93,6 @@ spec <- spec |> step_categorical_column_with_vocabulary_list(color,
 spec <- spec |> step_categorical_column_with_vocabulary_list(clarity, 
             vocabulary_list = c("I1",   "SI2",  "SI1",  "VS2",  "VS1",  "VVS2", 
             "VVS1", "IF"), num_oov_buckets = 0L) |> step_indicator_column(clarity)
-spec <- spec |> step_numeric_column(depth, normalizer_fn = scaler_standard())
-spec <- spec |> step_numeric_column(table, normalizer_fn = scaler_standard())
 spec <- spec |> step_numeric_column(x, normalizer_fn = scaler_standard())
 spec <- spec |> step_numeric_column(y, normalizer_fn = scaler_standard())
 spec <- spec |> step_numeric_column(z, normalizer_fn = scaler_standard())
@@ -110,9 +114,9 @@ str(spec$dense_features())
 # stops decreasing the callback it will stop the training and also it'll RESTORE
 # THE BEST WEIGHTS in the training
 lr <- callback_reduce_lr_on_plateau(monitor = 'val_mae',
-        patience = 25, verbose = 1, mode = 'min', min_lr = .001)
+        patience = 35, verbose = 1, mode = 'min', min_lr = .001)
 
-stoping <- callback_early_stopping(monitor = 'val_mae', patience = 35, 
+stopping <- callback_early_stopping(monitor = 'val_mae', patience = 50, 
         verbose = 1, mode ='min', restore_best_weights = TRUE)
 
 # Now, its time to build the model. For this I'm going to use the Functional-API
@@ -139,20 +143,21 @@ model |> compile(optimizer = optimizer_sgd(),
 # Then it is time for training. Also use the parameter validation_data with the 
 # repective validation dataset. Also I'll use both callbacks in the callback
 # parameter, and both callbacks helps to improve the model. When I ran it in my
-# computer the training stopped in the epoch 199 and I get the following: 
-# For train dataset the loss is .2262 and the mae is .2524  
-# For validation dataset the loss is .2913 amd the mae is .2814 
+# computer the training stopped in the epoch 335 and I get the following: 
+# For train dataset the loss is .2336 and the mae is .2505  
+# For validation dataset the loss is .2819 and the mae is .2718 
 # When I normalized the variable-price by dividing it between $1000 and if the
-# mae is .2814; this means that the predictions are off by $281 on average
-history <- model |> fit(x = train |> select(-price), y = train$price,  
-            batch_size = 128,  epochs = 200, verbose = 1, shuffle = TRUE, 
-            callbacks = list(lr, stoping) , 
+# mae is .2718 in the validation dataset; this means that the predictions  
+# are off by $271 on average
+ history <- model |> fit(x = train |> select(-price), y = train$price,  
+            batch_size = 128,  epochs = 500, verbose = 1, shuffle = TRUE, 
+            callbacks = list(lr, stopping) , 
             validation_data = list(val |> select(-price), val$price))
 
 # I can inspect the metrics
 plot(history)
 
-# It's time to evaluate the test dataset. The loss is .2987 amd MAE is .2831
+# It's time to evaluate the test dataset. The loss is .2899 and MAE is .2725
 model |> evaluate(test |> select(-price), test$price)
 
 # Now its time for predictions. I'll use the dataset to_predict and for the
@@ -171,12 +176,11 @@ to_predict$prediction <- predict(model, to_predict |> select(-price))
 # of observations. Finally I'll create the variable RATIO that will calculate the 
 #percentage of each value in the variable PERCENT by dividing CUM_SUM by the total.
 # The ratio of each value in the variable PERCENT are:
-# From 0% to 3% the ratio is 36%; from 5% to below the ratio is 56%
-# From 7% to below the ratio is 68%; from 10% to below the ratio is 78%
-# This means that 78% of the predictions in the dataset,  the PERCENT_ERROR
+# From 0% to 3% the ratio is 45%; from 5% to below the ratio is 62%
+# From 7% to below the ratio is 71%; from 10% to below the ratio is 83%
+# This means that 83% of the predictions in the dataset,  the PERCENT_ERROR
 # is less or equal to 10% 
-to_predict |> select(-c(x, y , z)) |> 
-    mutate(prediction = prediction * 1000, price = price * 1000) |> 
+to_predict |> mutate(prediction = prediction * 1000, price = price * 1000) |> 
     mutate(percent_eror = (price - prediction) / price * 100) |> 
     mutate(percent = as.integer(abs(percent_eror))) |> count(percent) |> 
     mutate(cum_sum = cumsum(n)) |> mutate(ratio = round(cum_sum / 150 * 100, 2)) |> 
@@ -188,12 +192,11 @@ to_predict |> select(-c(x, y , z)) |>
 # value will be rounded with absolute value. Also I'll apply the function quantile()
 # to the variable DIFFERENCE to calculate the quartiles from 5%, 10%, 15% until 100%. 
 # And I get the next values:
-# The 25% quartile is $39.75; the median is $89.50; the 75% quartile is $222.50 
-# The 85% quartile is $451.90; this means that the 85% of the values of DIFFERENCE 
-# between the prediction and the price are less or equal to $451.90
-to_predict |> select(-c(x, y , z, table, depth)) |> 
-    mutate(prediction = prediction * 1000, price = price * 1000) |> 
-    mutate(difference = round(abs(price - prediction)) ) |> 
+# The 25% quartile is $26.25; the median is $73; the 75% quartile is $224.75 
+# The 85% quartile is $437.50; this means that the 85% of the values of DIFFERENCE 
+# between the prediction and the price are less or equal to $437.50
+to_predict |> mutate(prediction = prediction * 1000, price = price * 1000) |> 
+    mutate(difference = round(abs(price - prediction))) |> 
     pull(difference) |> quantile(seq(.05, 1, .05))
 
 # I'm going to reuse the code with the variables PREDICTION and DIFFERENCE from the 
@@ -202,8 +205,7 @@ to_predict |> select(-c(x, y , z, table, depth)) |>
 # the variable, but the code will return multiple outputs by each observation.
 # And I'll need to apply data-wrangling to the data, so the data format can be 
 # readable. So, also apply the function pivot_wider() and unnest() to achieve it
-to_predict |> select(-c(x, y , z, table, depth)) |> 
-    mutate(prediction = prediction * 1000, price = price * 1000) |> 
+to_predict |> mutate(prediction = prediction * 1000, price = price * 1000) |> 
     mutate(difference = round(abs(price - prediction)) ) |> 
     group_by(cut) |> reframe(quartile = quantile(difference)) |> 
     pivot_wider(names_from = cut, values_from = quartile, values_fn = list) |> 
@@ -229,12 +231,11 @@ big_prediction$prediction <- predict(model, big_prediction |> select(-price))
 # of observations. Finally I'll create the variable RATIO that will calculate the 
 # percentage of each value in the variable PERCENT by dividing CUM_SUM by the total.
 # The ratio of each value in the variable PERCENT are:
-# From 0% to 3% the ratio is 37%; from 5% to below the ratio is 51%
-# From 7% to below the ratio is 63%; from 10% to below the ratio is 77%
-# This means that 77% of the predictions in the dataset,  the PERCENT_ERROR
+# From 0% to 3% the ratio is 40%; from 5% to below the ratio is 55%
+# From 7% to below the ratio is 67%; from 10% to below the ratio is 80%
+# This means that 80% of the predictions in the dataset,  the PERCENT_ERROR
 # is less or equal to 10%  
-big_prediction |> select(-c(x, y , z, depth, table)) |>
-    mutate(prediction = prediction * 1000, price = price * 1000) |> 
+big_prediction |> mutate(prediction = prediction * 1000, price = price * 1000) |> 
     mutate(percent_eror = abs(price - prediction) / price * 100) |> 
     mutate(percent = as.integer(percent_eror)) |> count(percent) |> 
     mutate(sums = cumsum(n))|> mutate(ratio = round(sums / 3000 * 100, 2)) |> 
@@ -246,12 +247,11 @@ big_prediction |> select(-c(x, y , z, depth, table)) |>
 # price. And the value will be rounded with absolute value.
 # Also I'll apply the function quantile() to the variable DIFFERENCE to calculate
 # the quartiles from 5%, 10%, 15% until 100%. And I get the next values:
-# The 25% quartile is $49; the median is $114.50; the 75% quartile is $293.25 
-# The 85% quartile is $485.15; this means that the 85% of the values of DIFFERENCE 
-# between the predictions and the price are less or equal to $485.15
-big_prediction |> select(-c(x, y , z, table, depth)) |> 
-    mutate(prediction = prediction * 1000, price = price  * 1000) |> 
-    mutate(difference = round(abs(price - prediction)) ) |> 
+# The 25% quartile is $42; the median is $105; the 75% quartile is $286 
+# The 85% quartile is $486; this means that the 85% of the values of DIFFERENCE 
+# between the predictions and the price are less or equal to $486
+big_prediction |> mutate(prediction = prediction * 1000, price = price  * 1000) |> 
+    mutate(difference = round(abs(price - prediction))) |> 
     pull(difference) |> quantile(seq(.05, 1, .05))
 
 # I'm going to reuse the code with the variables PREDICTION and DIFFERENCE from the
@@ -260,8 +260,7 @@ big_prediction |> select(-c(x, y , z, table, depth)) |>
 # the variable, but the code will return multiple outputs by each observation.
 # And I'll need to apply data-wrangling to the data, so the data format can be 
 # readable. So, also apply the function pivot_wider() and unnest() to achieve it
-big_prediction |> select(-c(x, y , z, table, depth)) |>  
-    mutate(prediction = prediction * 1000, price = price * 1000) |> 
+big_prediction |> mutate(prediction = prediction * 1000, price = price * 1000) |> 
     mutate(percent_eror = abs(price - prediction) / price * 100) |> 
     mutate(difference = round(abs(price - prediction)))  |> 
     group_by(cut) |> reframe(quantile = quantile(difference)) |> 
@@ -276,8 +275,7 @@ big_prediction |> select(-c(x, y , z, table, depth)) |>
 # multiple outputs by each observation. And I'll need to apply data-wrangling to 
 # the data, so the data format can be readable. But this time, I'll need to apply 
 # distinct functions such pivot_wider(), unnest() and pivot_longer() to achieve it
-big_prediction |> select(-c(x, y , z, table, depth)) |> 
-    mutate(prediction = prediction * 1000, price = price * 1000) |> 
+big_prediction |> mutate(prediction = prediction * 1000, price = price * 1000) |> 
     mutate(percent_eror = (price - prediction) / price * 100) |> 
     mutate(percent = abs(as.integer(percent_eror))) |> 
     mutate(difference = round(abs(price - prediction)) ) |> 
@@ -289,14 +287,17 @@ big_prediction |> select(-c(x, y , z, table, depth)) |>
         percent_11, percent_12, percent_13, percent_14, percent_15, percent_16, 
         percent_17, percent_18, percent_19, percent_20, percent_21, percent_22, 
         percent_23, percent_24, percent_25, percent_26, percent_27, percent_28, 
-        percent_29, percent_30, percent_31, percent_32, percent_33, percent_34, 
-        percent_35, percent_36, percent_37, percent_38, percent_39, percent_42, 
-        percent_44, percent_47, percent_48, percent_49, percent_50, percent_53, 
-        percent_59)) |> 
+        percent_29,percent_30, percent_31, percent_32, percent_33, percent_34, 
+        percent_36, percent_37, percent_38, percent_39, percent_40, percent_41, 
+        percent_42, percent_44, percent_47, percent_48, percent_50, percent_52, 
+        percent_54, percent_56, percent_70)) |> 
     add_column('quartile' = c('0%', '25%', '50%', '75%', '100%'), .before = 1) |> 
     pivot_longer(cols = -quartile, names_to = 'percent', values_to = 'values') |> 
     pivot_wider(names_from = quartile, names_prefix = 'quartile_' , 
                 values_from = values) |> print.data.frame()
+
+
+
 
 
 
