@@ -168,9 +168,9 @@ summary(model)
 # use the  mean-absolute-error
 model |> compile(optimizer = optimizer_sgd(), loss = 'mae')
 
-# It's time for training. The training interrupted in the epoch 193 and restore  
-# the weights from epoch 158. The metrics obtained are the following:
-# In train dataset the loss = 1.5330; for val dataset the loss = 4.2871
+# It's time for training. The training interrupted in the epoch 200 and restore  
+# the weights from epoch 166. The metrics obtained are the following:
+# In train dataset the loss = 1.5231; for val dataset the loss = 4.2845
 model |> fit(train, epochs = 200, validation_data = val, verbose = 2,
              callbacks = list(stopping))
 
@@ -180,12 +180,20 @@ model |> fit(train, epochs = 200, validation_data = val, verbose = 2,
 to_predict <- inputs[400:429, ] |> as.matrix()
 to_predict <- reticulate::np_array(to_predict)
 
-# Now I make the prediction. The number is 9.124542. I normalized by 10 so the 
-# value predicted for the oil price on 16 September, 2008  is: $91.24542
+# Now I make the prediction. The number is 9.126093. I normalized by 10 so the 
+# value predicted for the oil price on 16 September, 2008  is: $91.26
 model |> predict(to_predict [tf$newaxis])
 
 # Now, we can inspect the value on that day from the oil tibble. The oil price on 
-# September 16, 2008 was: $ 91.50, the difference is almost a quarter of dollar.
+# September 16, 2008 was: $ 91.49, the difference is less than a quarter of dollar.
 # So the model was capable to detect and learn the patterns in the stock indices.
-oil |> filter(date == '2008-09-16')
+oil |> filter(date == '2008-09-16') |> pull(price)
+
+# Now, calculate the percent-error metric. The percent-error formula is: 
+# prediction - price / price * 100 using the absolute-value function:
+percent_error <- abs(((91.26 - 91.49) / 91.49) * 100)
+
+# Now, calculate the percent-accuracy metric. Using the round() function with
+# two decimals. The prediction of the Oil-price have an accuracy of 99.75% 
+round(100 - percent_error, digits = 2)
 
